@@ -1,4 +1,4 @@
-import { useContext, useState } from "react";
+import { useContext, useEffect, useState } from "react";
 import {
   Image,
   TabList,
@@ -14,6 +14,34 @@ import { TeamsFxContext } from "../Context";
 import { app } from "@microsoft/teams-js";
 import * as microsoftTeams from "@microsoft/teams-js";
 import { Button } from "@fluentui/react-components";
+
+interface Message {
+  UUID: string | null;
+}
+
+interface MessageWithCallback {
+  UUID: string | null;
+  callbackId: string | null;
+}
+
+declare global {
+  interface Window {
+    authToken: (token: string) => void;
+    webkit: {
+      messageHandlers: {
+        PageLoadCompleted: {
+          postMessage: (message: Message) => void;
+        };
+        ExitWebView: {
+          postMessage: (message: Message) => void;
+        };
+        AuthToken: {
+          postMessage: (message: MessageWithCallback) => void;
+        };
+      };
+    };
+  }
+}
 
 export function Welcome(props: { showFunction?: boolean; environment?: string }) {
   const { showFunction, environment } = {
@@ -75,6 +103,44 @@ export function Welcome(props: { showFunction?: boolean; environment?: string })
     })
   }
 
+  const [uuid, setUuid] = useState('');
+  const [authToken, setAuthToken] = useState('Fetch Token Time');
+  let callbackIndex: number = 1000;
+  useEffect(() => {
+    if (window.webkit && window.webkit.messageHandlers) {
+      // Call your method here'
+      const allParams = new URLSearchParams(window.location.search);
+      const uuid = allParams.get('UUID') || '';
+      setUuid(uuid);
+      window.webkit.messageHandlers.PageLoadCompleted.postMessage({ UUID: uuid });
+    }
+  }, []);
+
+  const handleClick = (): void => {
+    window.webkit.messageHandlers.ExitWebView.postMessage({ UUID: uuid });
+  };
+
+  const handleAuthToken = (): void => {
+    const startTime = Date.now();
+    const data = new Promise<string>((resolve, reject) => {
+      if (window.webkit && window.webkit.messageHandlers) {
+        window.authToken = (token: string): void => {
+          resolve(token);
+        };
+        window.webkit.messageHandlers.AuthToken.postMessage({
+          UUID: uuid,
+          callbackId: `${Date.now().toString()}-${callbackIndex++}`,
+        });
+      } else {
+        reject('Interface not found');
+      }
+    });
+    data.then(async (output) => {
+      console.log(output);
+      setAuthToken((Date.now() - startTime).toString());
+    });
+  };
+
   return (
     <div className="welcome page">
       <div className="narrow page-padding">
@@ -93,6 +159,11 @@ export function Welcome(props: { showFunction?: boolean; environment?: string })
         <div>
         {timeTaken}
         </div>
+      </div>
+      <div>
+        <h1>Native Webview Method</h1>
+        <button onClick={handleClick}>Click to Exit</button>
+        <button onClick={handleAuthToken}>Get Auth Token</button>
       </div>
     </div>
   );
